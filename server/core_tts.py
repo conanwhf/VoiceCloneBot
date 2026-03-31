@@ -298,6 +298,44 @@ class CosyVoiceEngine(BaseTTSEngine):
         return audio, 24000
 
 
+# ==========================================
+# 4. ChatTTS 引擎 (2noise)
+# ==========================================
+class ChatTTSEngine(BaseTTSEngine):
+    """
+    依赖：需要先用 scripts/install_chattts.sh 安装。
+    核心库: ChatTTS (从 github 克隆)
+    特性: 极强的对话韵律控制，支持 [laugh] [uv_break] 等标记。
+    注意: ChatTTS 不支持零样本声音克隆，它使用随机种子生成不同音色。
+          ref_audio 参数在此引擎下不生效。
+    """
+    def load(self):
+        print(f"[ChatTTSEngine] 分配计算单元: {self.device}")
+
+        try:
+            import ChatTTS
+        except ImportError:
+            raise ImportError(
+                "[ChatTTSEngine] 缺少 ChatTTS 库！\n"
+                "请先运行: bash scripts/install_chattts.sh\n"
+                "该脚本会自动克隆源码并安装依赖。"
+            )
+
+        self.model = ChatTTS.Chat()
+        self.model.load(compile=False)  # compile=True 需要较新的 torch
+        print("[ChatTTSEngine] 模型加载完毕！")
+
+    def synthesize_chunk(self, text: str, ref_audio: str, speed: float = 1.0):
+        import torch
+
+        wavs = self.model.infer([text])
+        audio = wavs[0]
+        if isinstance(audio, torch.Tensor):
+            audio = audio.cpu().numpy()
+        if audio.ndim > 1:
+            audio = audio.squeeze()
+        return audio, 24000
+
 
 # ==========================================
 # 5. OpenVoice V2 引擎 (MyShell)
@@ -380,6 +418,7 @@ _active_engine: BaseTTSEngine = None
 ENGINE_REGISTRY = {
     "f5": F5TTSEngine,
     "cosyvoice": CosyVoiceEngine,
+    "chattts": ChatTTSEngine,
     "openvoice": OpenVoiceEngine,
 }
 

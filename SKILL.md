@@ -99,16 +99,13 @@ To control emotion, select or prepare reference audio that carries the desired t
 
 **Practical approach for Agents:** If the user has sent multiple voice messages, choose the one whose emotional tone best matches the context of your reply. If only one reference is available, use it as-is — the model will approximate the speaker's general style.
 
-**Exception — ChatTTS:** This engine supports inline emotion tags in text: `[laugh]`, `[uv_break]` (pause). However, ChatTTS does not clone voices (it generates random voices), so these tags only work with the ChatTTS engine.
-
 ## Available engines
 
-| Engine | ID | Install | Size | Clone | Speed support | Best for |
-| --- | --- | --- | --- | :---: | --- | --- |
-| **F5-TTS** | `f5` | `bash scripts/auto_installer.sh` | ~1.5GB | ✅ | Native | Highest quality cloning |
-| **CosyVoice** | `cosyvoice` | `bash scripts/install_cosyvoice.sh` | ~1.5GB | ✅ | ffmpeg | Natural Chinese prosody |
-| **ChatTTS** | `chattts` | `bash scripts/install_chattts.sh` | ~400MB | ❌ | ffmpeg | Dialogue with emotion tags |
-| **OpenVoice** | `openvoice` | `bash scripts/install_openvoice.sh` | ~300MB | ✅ | ffmpeg | Ultra fast, tiny footprint |
+| Engine | ID | Install | Size | Speed support | Best for |
+| --- | --- | --- | --- | --- | --- |
+| **F5-TTS** | `f5` | `bash scripts/auto_installer.sh` | ~1.5GB | Native | Highest quality cloning |
+| **CosyVoice** | `cosyvoice` | `bash scripts/install_cosyvoice.sh` | ~1.5GB | ffmpeg | Natural Chinese prosody |
+| **OpenVoice** | `openvoice` | `bash scripts/install_openvoice.sh` | ~300MB | ffmpeg | Ultra fast, tiny footprint |
 
 Switch engines by setting the environment variable before the server starts:
 ```bash
@@ -136,7 +133,6 @@ scripts/
 ├── tts_client.py            # HTTP client that talks to the backend
 ├── auto_installer.sh        # Install F5-TTS (default) + register skill
 ├── install_cosyvoice.sh     # Install CosyVoice engine
-├── install_chattts.sh       # Install ChatTTS engine
 ├── install_openvoice.sh     # Install OpenVoice engine
 └── uninstall.sh             # Cleanup script
 server/

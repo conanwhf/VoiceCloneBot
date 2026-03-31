@@ -67,7 +67,6 @@ VoiceCloneBot/
 ├── scripts/
 │   ├── auto_installer.sh         # 默认引擎(F5-TTS)安装 + OpenClaw 技能注册
 │   ├── install_cosyvoice.sh      # CosyVoice 引擎安装
-│   ├── install_chattts.sh        # ChatTTS 引擎安装
 │   ├── install_openvoice.sh      # OpenVoice V2 引擎安装
 │   ├── run_tts.sh                # 统一入口（自动守护进程管理 + 推理转发）
 │   ├── uninstall.sh              # 清理脚本（支持按引擎卸载 / 全量卸载 / 彻底清除）
@@ -90,7 +89,6 @@ VoiceCloneBot/
 BaseTTSEngine (ABC)
 ├── F5TTSEngine         # NATIVE_SPEED_SUPPORT = True
 ├── CosyVoiceEngine     # NATIVE_SPEED_SUPPORT = False (ffmpeg 后处理)
-├── ChatTTSEngine       # NATIVE_SPEED_SUPPORT = False (ffmpeg 后处理)
 └── OpenVoiceEngine     # NATIVE_SPEED_SUPPORT = False (ffmpeg 后处理)
 ```
 

@@ -1,53 +1,146 @@
 ---
 name: openclaw-voice-clone
-description: Use this skill whenever the user expects a spoken voice reply (e.g., they send an audio message and want an audio response back). It clones the user's previously provided reference voice to synthesize any generated text conversationally. Use it universally when asked to "speak", "clone voice", or "reply in my voice." Supports multiple TTS engines (F5-TTS, CosyVoice, ChatTTS, OpenVoice) and handles long texts automatically.
-compatibility: Requires local environment with minimum 8GB RAM to load PyTorch TTS weights silently.
+description: Synthesize speech by cloning a user's voice from a reference audio sample, then reading generated text aloud in that cloned voice. Use this skill whenever the user sends a voice message and expects an audio reply, asks to "speak", "clone my voice", "read this aloud", "reply with audio", or any context where a spoken voice response is appropriate. Also use when the user wants to switch into "voice mode" for conversation. Even if the user doesn't explicitly say "voice clone", use this skill if they send audio input and the natural response would be spoken.
 ---
 
-# Voice Clone Bot (OpenClaw Standard Skill)
+# Voice Clone Skill
 
-This is a complete, self-initializing Text-to-Speech voice cloning skill. It runs a detached background daemon to keep heavy PyTorch weights constantly in memory for extremely fast zero-shot cloning.
+A self-initializing, zero-configuration voice cloning skill. It manages a background TTS daemon that keeps heavy model weights in memory for fast inference. Supports multiple engines and unlimited text length.
 
-You (the Agent) do NOT need to ask the user to configure anything. Everything is automated.
+## Quick reference
 
-## When to trigger
-- The user sends you a voice memo / audio file as input context.
-- The user asks you to read text out loud.
-- The user asks you to clone their voice or reply mimicking their tone.
+| Item | Value |
+| --- | --- |
+| Entry script | `bash scripts/run_tts.sh --text "..." --ref_audio "..." [--speed 1.0]` |
+| Output | Single line: absolute path to generated `.ogg` file |
+| Attachment format | `MEDIA:<output_path>` |
+| Default engine | F5-TTS (env `TTS_BACKEND=f5`) |
 
-## Inputs required from Agent
-When you decide to reply with cloned voice, you must figure out:
-1. `ref_audio`: The absolute path to the reference audio file the user just uploaded or referenced (e.g., `/path/to/user_voice.ogg`).
-2. `text`: The conversational text response you generated.
-3. `speed` (Optional): Speech speed multiplier. Default is 1.0. For faster speech, use 1.2. For slower, use 0.8.
+## When to use this skill
 
-## Action instructions
-To execute the voice synthesis, you MUST use the bundled `run_tts.sh` wrapper script exactly like this:
+- The user sends a voice memo or audio file and you need to reply with audio.
+- The user says "read this aloud", "speak to me", "use my voice", "voice mode".
+- The conversation context implies a spoken reply is expected.
+- The user provides a reference audio and asks you to mimic their voice.
+
+## Step-by-step usage
+
+### 1. Identify inputs
+
+You need two things:
+
+- **`ref_audio`**: The absolute local path to the user's reference audio file (the voice to clone). This is typically the audio file the user just sent, saved by the ASR system (e.g., openai-whisper).
+- **`text`**: The text content you want to speak. Generate this as you normally would — think of your reply, then voice it.
+
+### 2. Run the synthesis
+
+Execute this command:
 
 ```bash
-bash scripts/run_tts.sh --text "Your generated conversational text." --ref_audio "/absolute/path/to/reference/audio.ogg" --speed 1.0
+bash scripts/run_tts.sh --text "Your reply text here." --ref_audio "/absolute/path/to/reference.ogg"
 ```
 
-1. You **MUST NOT** try to manually start python or launch the `app.py` server yourself. The `run_tts.sh` script is capable of self-diagnosing the daemon port and installing Python virtual environments (`venv`) autonomously if this is its first ever run.
-2. Be patient on the first execution! The script may hang for 30~60 seconds because it uses `nohup` to start the massive TTS Backend engine in the background or downloads PyTorch. Do not interrupt it.
-3. **Long texts are handled automatically.** You can pass in any length of text. The engine will split it into sentences, synthesize each chunk individually, and seamlessly stitch them into a single audio file. There is no length limit.
+Optional parameters:
+- `--speed 1.2` — Speak faster. Range: 0.5 to 2.0. Default: 1.0.
 
-## Output expectations
-If successful, the script will print a single absolute path to the newly generated audio response (e.g., `/path/to/generated_audio/reply_abcd.ogg`).
-You must append this exact output to your final user response using the standard OpenClaw attachment format:
-`MEDIA:/path/to/generated_audio/reply_abcd.ogg`
-
-## Available TTS Engines
-The default engine is `f5` (F5-TTS). Users can switch engines by setting the `TTS_BACKEND` environment variable before starting the server.
-
-| Engine | Install Command | Zero-shot Clone | Notes |
-| --- | --- | --- | --- |
-| **F5-TTS** (default) | `bash scripts/auto_installer.sh` | ✅ Yes | Best quality clone. ~1.5GB weights. |
-| **CosyVoice** | `bash scripts/install_cosyvoice.sh` | ✅ Yes | Alibaba. Natural prosody. ~1.5GB. |
-| **ChatTTS** | `bash scripts/install_chattts.sh` | ❌ No | Random voice. Supports [laugh] tags. |
-| **OpenVoice** | `bash scripts/install_openvoice.sh` | ✅ Yes | MyShell. Ultra fast. ~300MB. |
-
-To switch engine, the user or Agent should set the environment variable:
+**Example with all options:**
 ```bash
-export TTS_BACKEND=cosyvoice   # or: f5, chattts, openvoice
+bash scripts/run_tts.sh \
+  --text "很高兴认识你，这是我克隆后的声音。" \
+  --ref_audio "/tmp/user_voice_msg.ogg" \
+  --speed 0.9
+```
+
+### 3. Handle the output
+
+The script prints a single absolute path on stdout (e.g., `/path/to/reply_a1b2c3d4.ogg`).
+Append it to your response using the attachment format:
+
+```
+MEDIA:/path/to/reply_a1b2c3d4.ogg
+```
+
+### 4. Important constraints
+
+- **Do NOT** manually start `python app.py` or manage the backend. The `run_tts.sh` script auto-detects, auto-installs, and auto-starts everything.
+- **First run is slow** (~30-60 seconds) because it downloads model weights and loads them into memory. Subsequent calls are fast.
+- **Long texts work automatically.** The engine splits text into sentences, synthesizes each chunk, and stitches them seamlessly. No length limit.
+
+## Controlling voice characteristics
+
+### Speed (all engines)
+
+The `--speed` parameter adjusts speaking rate:
+
+| Value | Effect |
+| --- | --- |
+| `0.7` | Slow, deliberate, suitable for elderly listeners |
+| `1.0` | Natural conversational speed (default) |
+| `1.3` | Brisk, suitable for news or briefings |
+| `1.5+` | Fast, compressed delivery |
+
+F5-TTS supports speed natively. Other engines use ffmpeg post-processing (atempo filter), which gives good results but may slightly affect quality at extreme values.
+
+### Emotion and tone
+
+These models use **acoustic feature extraction** from the reference audio — they do not accept text-based emotion tags like `[happy]` or `[sad]`.
+
+**The emotion of the output is determined entirely by the reference audio.**
+
+To control emotion, select or prepare reference audio that carries the desired tone:
+
+| Desired tone | Reference audio strategy |
+| --- | --- |
+| Calm, neutral | Use a reference clip where the speaker talks normally |
+| Excited, happy | Use a reference clip where the speaker sounds enthusiastic |
+| Angry, intense | Use a reference clip with raised voice and sharp intonation |
+| Sad, melancholic | Use a reference clip with slow, downcast delivery |
+| Whispering | Use a reference clip where the speaker whispers |
+
+**Practical approach for Agents:** If the user has sent multiple voice messages, choose the one whose emotional tone best matches the context of your reply. If only one reference is available, use it as-is — the model will approximate the speaker's general style.
+
+**Exception — ChatTTS:** This engine supports inline emotion tags in text: `[laugh]`, `[uv_break]` (pause). However, ChatTTS does not clone voices (it generates random voices), so these tags only work with the ChatTTS engine.
+
+## Available engines
+
+| Engine | ID | Install | Size | Clone | Speed support | Best for |
+| --- | --- | --- | --- | :---: | --- | --- |
+| **F5-TTS** | `f5` | `bash scripts/auto_installer.sh` | ~1.5GB | ✅ | Native | Highest quality cloning |
+| **CosyVoice** | `cosyvoice` | `bash scripts/install_cosyvoice.sh` | ~1.5GB | ✅ | ffmpeg | Natural Chinese prosody |
+| **ChatTTS** | `chattts` | `bash scripts/install_chattts.sh` | ~400MB | ❌ | ffmpeg | Dialogue with emotion tags |
+| **OpenVoice** | `openvoice` | `bash scripts/install_openvoice.sh` | ~300MB | ✅ | ffmpeg | Ultra fast, tiny footprint |
+
+Switch engines by setting the environment variable before the server starts:
+```bash
+export TTS_BACKEND=cosyvoice
+```
+
+## Uninstalling
+
+```bash
+# Remove everything (venv, daemon, registration)
+bash scripts/uninstall.sh
+
+# Remove only one engine's source code
+bash scripts/uninstall.sh --engine cosyvoice
+
+# Remove everything INCLUDING downloaded model weights (several GB)
+bash scripts/uninstall.sh --purge
+```
+
+## File structure
+
+```
+scripts/
+├── run_tts.sh              # Main entry point (auto-heals, auto-starts daemon)
+├── tts_client.py            # HTTP client that talks to the backend
+├── auto_installer.sh        # Install F5-TTS (default) + register skill
+├── install_cosyvoice.sh     # Install CosyVoice engine
+├── install_chattts.sh       # Install ChatTTS engine
+├── install_openvoice.sh     # Install OpenVoice engine
+└── uninstall.sh             # Cleanup script
+server/
+├── app.py                   # FastAPI daemon (auto-managed, do not start manually)
+├── core_tts.py              # Multi-engine factory + long text chunking
+└── requirements.txt         # Base dependencies
 ```

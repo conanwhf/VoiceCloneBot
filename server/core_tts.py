@@ -71,6 +71,9 @@ def split_text_to_chunks(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list:
 # 1. 引擎通用基类定义
 # ==========================================
 class BaseTTSEngine(ABC):
+    # 子类如果原生支持 speed 参数，应设为 True
+    NATIVE_SPEED_SUPPORT = False
+
     def __init__(self, model_dir: str):
         self.model_dir = model_dir
         self.device = self._get_optimal_device()
@@ -87,6 +90,38 @@ class BaseTTSEngine(ABC):
         except ImportError:
             pass
         return "cpu"
+
+    @staticmethod
+    def _apply_speed_ffmpeg(audio: np.ndarray, sample_rate: int, speed: float) -> np.ndarray:
+        """
+        对不原生支持语速的引擎，通过 ffmpeg atempo 滤镜做后处理变速。
+        speed > 1.0 加速，< 1.0 减速。ffmpeg atempo 范围 [0.5, 100.0]。
+        """
+        if abs(speed - 1.0) < 0.01:
+            return audio
+
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f_in:
+            in_path = f_in.name
+        out_path = in_path + "_speed.wav"
+
+        sf.write(in_path, audio, sample_rate)
+
+        # ffmpeg atempo 范围 [0.5, 100.0]，超出需要链式叠加
+        atempo_val = max(0.5, min(speed, 100.0))
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", in_path, "-filter:a", f"atempo={atempo_val}", out_path],
+            capture_output=True
+        )
+
+        if os.path.exists(out_path):
+            result, _ = sf.read(out_path)
+            os.unlink(in_path)
+            os.unlink(out_path)
+            return result
+        else:
+            os.unlink(in_path)
+            return audio
 
     @abstractmethod
     def load(self):
@@ -115,6 +150,9 @@ class BaseTTSEngine(ABC):
         for i, chunk in enumerate(chunks):
             print(f"  [{i+1}/{len(chunks)}] 推理中: '{chunk[:40]}...'")
             audio_seg, sr = self.synthesize_chunk(chunk, ref_audio, speed)
+            # 对不原生支持 speed 的引擎，通过 ffmpeg 后处理变速
+            if not self.NATIVE_SPEED_SUPPORT and abs(speed - 1.0) >= 0.01:
+                audio_seg = self._apply_speed_ffmpeg(audio_seg, sr, speed)
             sample_rate = sr
             all_segments.append(audio_seg)
 
@@ -142,6 +180,8 @@ class BaseTTSEngine(ABC):
 # 2. F5-TTS 引擎
 # ==========================================
 class F5TTSEngine(BaseTTSEngine):
+    NATIVE_SPEED_SUPPORT = True  # F5-TTS 原生支持 speed 参数
+
     def load(self):
         print(f"[F5TTSEngine] 分配计算单元: {self.device}")
 

@@ -1,46 +1,124 @@
 #!/bin/bash
-#卸载与环境清理脚本 (一键回退版)
-#用于彻底杀死过去手动启动的常驻服务，并清空沙盒配置。
+# 卸载与环境清理脚本 (全引擎版)
+# 使用: bash scripts/uninstall.sh [选项]
+#
+# 选项:
+#   --all           卸载全部引擎与环境（默认行为）
+#   --engine NAME   仅卸载指定引擎的源码（保留 venv 和基础环境）
+#   --purge         彻底删除，包括全局模型权重（数 GB）
 
-echo "=== 开始执行 Voice Clone 还原与清理工作 ==="
+set -e
 
-# 1. 杀死正在占用端点或在后台脱壳狂跑的 FastAPI 进程
-echo "[-] 正在探测并杀死占用 8000 端口及后台滞留的 app.py 进程..."
-# 获取监听 8000 的进程PID（如果存在）
-PIDS=$(lsof -t -i:8000 || echo "")
+CDIR="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$CDIR"
+
+MODE="all"
+PURGE_MODELS=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --engine) MODE="engine"; ENGINE_NAME="$2"; shift 2 ;;
+        --purge)  PURGE_MODELS=true; shift ;;
+        --all)    MODE="all"; shift ;;
+        *)        echo "未知选项: $1"; exit 1 ;;
+    esac
+done
+
+echo "=== VoiceCloneBot 卸载与清理 ==="
+
+# -----------------------------------------------
+# 1. 杀死所有后台守护进程
+# -----------------------------------------------
+echo ""
+echo "[1/5] 终止后台服务进程..."
+
+PIDS=$(lsof -t -i:8000 2>/dev/null || echo "")
 if [ -n "$PIDS" ]; then
-    kill -9 $PIDS
-    echo "    - 成功强制关闭端口 8000 的守护进程 (PID: $PIDS)。"
+    kill -9 $PIDS 2>/dev/null || true
+    echo "    ✓ 已关闭端口 8000 的进程 (PID: $PIDS)"
 else
-    echo "    - 端点清空：当前 8000 端口未被占用。"
+    echo "    - 端口 8000 未被占用"
+fi
+pkill -f "python app.py" 2>/dev/null && echo "    ✓ 已清理残留 app.py 进程" || true
+
+# 清理守护日志
+rm -f server/daemon_server.log
+# 清理生成的临时音频
+rm -rf server/generated_audio
+
+# -----------------------------------------------
+# 2. 按模式清理引擎源码
+# -----------------------------------------------
+echo ""
+echo "[2/5] 清理引擎源码..."
+
+remove_engine_source() {
+    local name="$1"
+    local dir=""
+    case "$name" in
+        cosyvoice) dir="venv/CosyVoice" ;;
+        chattts)   dir="venv/ChatTTS" ;;
+        openvoice) dir="venv/OpenVoice" ;;
+        f5)        echo "    - F5-TTS 通过 pip 安装，将随 venv 一起清除"; return ;;
+        *)         echo "    ! 未知引擎: $name"; return ;;
+    esac
+    if [ -d "$dir" ]; then
+        rm -rf "$dir"
+        echo "    ✓ 已删除 $name 源码: $dir"
+    else
+        echo "    - $name 源码不存在，跳过"
+    fi
+}
+
+if [ "$MODE" = "engine" ]; then
+    remove_engine_source "$ENGINE_NAME"
+elif [ "$MODE" = "all" ]; then
+    # 删除整个 venv（包含所有引擎源码）
+    echo "[3/5] 删除 Python 虚拟环境 (venv)..."
+    if [ -d "venv" ]; then
+        rm -rf venv
+        echo "    ✓ 已删除 venv（释放数 GB 空间）"
+    else
+        echo "    - venv 不存在"
+    fi
 fi
 
-# 再用正则容错匹配杀掉遗漏的后台执行实例
-pkill -f "python app.py" && echo "    - 成功清理遗留脱壳进程。" || true
-
-# 2. 移除为了项目构建的极其庞大的推演沙盒 Python 虚拟环境
-echo "[-] 正在删除用于隔离 F5-TTS 和 Torch 的本地 venv 虚拟硬盘环境..."
-if [ -d "venv" ]; then
-    rm -rf venv
-    echo "    - 成功删除本目录 venv 系统 (释放了上 GB 空间)。"
-else
-    echo "    - venv 已不存在。"
-fi
-
-# 3. 截断向 OpenClaw 大脑主目录自动生成的 Agent 挂载短接头
-echo "[-] 正在卸除系统级的 Agent Skill 注册态..."
+# -----------------------------------------------
+# 3. 卸除 OpenClaw 技能注册
+# -----------------------------------------------
+echo ""
+echo "[4/5] 卸除 OpenClaw 技能注册..."
 SKILL_LINK="$HOME/.openclaw/skills/openclaw-voice-clone"
 if [ -L "$SKILL_LINK" ] || [ -d "$SKILL_LINK" ]; then
     rm -rf "$SKILL_LINK"
-    echo "    - 成功拔除技能注册锚点: $SKILL_LINK"
+    echo "    ✓ 已拔除技能注册: $SKILL_LINK"
+else
+    echo "    - 未找到技能注册"
 fi
 
-# 4. （可选保留项）大模型权重文件
-# 因为模型重达几个 GB，每次下载需要耗费十分钟且极吃带宽，故默认不删除。
-# 想要彻底格式化的用户可以手动去掉下方行的注释。
-# rm -rf "$HOME/.openclaw/models/voice-clone/"
+# -----------------------------------------------
+# 4. 可选：清除全局模型权重
+# -----------------------------------------------
+echo ""
+echo "[5/5] 全局模型权重..."
+MODEL_DIR="$HOME/.openclaw/models/voice-clone"
+if [ "$PURGE_MODELS" = true ]; then
+    if [ -d "$MODEL_DIR" ]; then
+        rm -rf "$MODEL_DIR"
+        echo "    ✓ 已彻底删除全局模型权重: $MODEL_DIR"
+    fi
+else
+    if [ -d "$MODEL_DIR" ]; then
+        echo "    - 保留全局模型权重（数 GB，避免重复下载）"
+        echo "      如需彻底清理，请使用: bash scripts/uninstall.sh --purge"
+    fi
+fi
 
 echo ""
-echo "=== 回退完毕！你的系统已经对刚才跑过的这部分服务彻底失忆了。 ==="
-echo "如果你想再次体验开机和新 Agent 是如何毫无干预地把它拉起来的，请直接运行："
-echo "   bash scripts/run_tts.sh --text '你好' --ref_audio '某个录音.ogg'"
+echo "=== 清理完毕！==="
+if [ "$MODE" = "engine" ]; then
+    echo "已卸载引擎: $ENGINE_NAME"
+    echo "venv 基础环境保留，可直接安装其他引擎。"
+else
+    echo "所有环境已还原。重新安装请运行: bash scripts/auto_installer.sh"
+fi
